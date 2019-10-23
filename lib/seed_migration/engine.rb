@@ -10,6 +10,7 @@ module SeedMigration
   mattr_accessor :update_seeds_file
   mattr_accessor :migrations_path
   mattr_accessor :use_strict_create
+  mattr_reader :connects_to_database
 
   self.migration_table_name = DEFAULT_TABLE_NAME
   self.extend_native_migration_task = false
@@ -17,6 +18,13 @@ module SeedMigration
   self.update_seeds_file = true
   self.migrations_path = 'data'
   self.use_strict_create = false
+
+  def self.connects_to(database: {})
+    @@connects_to_database = database
+    ActiveSupport.on_load(:active_record) do
+      SeedMigration::DataMigration.connects_to(database: database)
+    end
+  end
 
   def self.config
     yield self

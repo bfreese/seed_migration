@@ -1,5 +1,6 @@
 require 'logger'
 require 'pathname'
+require_relative 'seed_file'
 
 module SeedMigration
   class Migrator
@@ -26,22 +27,24 @@ module SeedMigration
 
       start_time = Time.now
       announce("#{klass}: migrating")
-      ActiveRecord::Base.transaction do
-        klass.new.up
-        end_time = Time.now
-        runtime = (end_time - start_time).to_d.round(2)
+      SeedMigration::Migrator.establish_connection do
+        ActiveRecord::Base.transaction do
+          klass.new.up
+          end_time = Time.now
+          runtime = (end_time - start_time).to_d.round(2)
 
-        # Create record
-        migration = SeedMigration::DataMigration.new
-        migration.version = version
-        migration.runtime = runtime.to_i
-        migration.migrated_on = DateTime.now
-        begin
-          migration.save!
-        rescue StandardError => e
-          SeedMigration::Migrator.logger.error e
+          # Create record
+          migration = SeedMigration::DataMigration.new
+          migration.version = version
+          migration.runtime = runtime.to_i
+          migration.migrated_on = DateTime.now
+          begin
+            migration.save!
+          rescue StandardError => e
+            SeedMigration::Migrator.logger.error e
+          end
+          announce("#{klass}: migrated (#{runtime}s)")
         end
-        announce("#{klass}: migrated (#{runtime}s)")
       end
     end
 
@@ -58,14 +61,16 @@ module SeedMigration
       # Revert
       start_time = Time.now
       announce("#{klass}: reverting")
-      ActiveRecord::Base.transaction do
-        klass.new.down
-        end_time = Time.now
-        runtime = (end_time - start_time).to_d.round(2)
+      SeedMigration::Migrator.establish_connection do
+        ActiveRecord::Base.transaction do
+          klass.new.down
+          end_time = Time.now
+          runtime = (end_time - start_time).to_d.round(2)
 
-        # Delete record of migration
-        migration.destroy
-        announce("#{klass}: reverted (#{runtime}s)")
+          # Delete record of migration
+          migration.destroy
+          announce("#{klass}: reverted (#{runtime}s)")
+        end
       end
     end
 
@@ -147,6 +152,20 @@ module SeedMigration
     end
 
     private
+
+    def self.establish_connection
+      if SeedMigration.connects_to_database.present?
+        puts 'requires_connected_to'
+        ActiveRecord::Base.connected_to(
+          database: SeedMigration.connects_to_database
+        ) do
+          yield
+        end
+      else
+        puts 'NOT USING CONNECTION'
+        yield
+      end
+    end
 
     def class_from_path
       announce("Loading migration class at '#{@path}'")
@@ -235,69 +254,7 @@ module SeedMigration
     end
 
     def self.create_seed_file
-      if !SeedMigration.update_seeds_file || !Rails.env.development?
-        return
-      end
-      File.open(SEEDS_FILE_PATH, 'w') do |file|
-        file.write <<-eos
-# encoding: UTF-8
-# This file is auto-generated from the current content of the database. Instead
-# of editing this file, please use the migrations feature of Seed Migration to
-# incrementally modify your database, and then regenerate this seed file.
-#
-# If you need to create the database on another system, you should be using
-# db:seed, not running all the migrations from scratch. The latter is a flawed
-# and unsustainable approach (the more migrations you'll amass, the slower
-# it'll run and the greater likelihood for issues).
-#
-# It's strongly recommended to check this file into your version control system.
-
-ActiveRecord::Base.transaction do
-        eos
-        SeedMigration.registrar.each do |register_entry|
-          register_entry.model.order('id').each do |instance|
-            file.write generate_model_creation_string(instance, register_entry)
-          end
-
-          if !SeedMigration.ignore_ids
-            file.write <<-eos
-  ActiveRecord::Base.connection.reset_pk_sequence!('#{register_entry.model.table_name}')
-            eos
-          end
-        end
-        file.write <<-eos
-end
-
-SeedMigration::Migrator.bootstrap(#{last_migration})
-        eos
-      end
-    end
-
-    def self.generate_model_creation_string(instance, register_entry)
-      attributes = instance.attributes.select {|key| register_entry.attributes.include?(key) }
-      if SeedMigration.ignore_ids
-        attributes.delete('id')
-      end
-      sorted_attributes = {}
-      attributes.sort.each do |key, value|
-        sorted_attributes[key] = value
-      end
-
-      if Rails::VERSION::MAJOR == 3 || defined?(ActiveModel::MassAssignmentSecurity)
-        model_creation_string = "#{instance.class}.#{create_method}(#{JSON.parse(sorted_attributes.to_json)}, :without_protection => true)"
-      elsif [4, 5, 6].include?(Rails::VERSION::MAJOR)
-        model_creation_string = "#{instance.class}.#{create_method}(#{JSON.parse(sorted_attributes.to_json)})"
-      end
-
-      # With pretty indents, please.
-      return <<-eos
-
-  #{model_creation_string}
-      eos
-    end
-
-    def self.create_method
-      SeedMigration.use_strict_create? ? 'create!' : 'create'
+      SeedFile.create(SEEDS_FILE_PATH)
     end
 
     class PendingMigrationError < StandardError
