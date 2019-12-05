@@ -68,7 +68,16 @@ module SeedMigration
           decrease_indent
           write_line 'end'
         end
+        write_seed_extension_tasks
         write_line "SeedMigration::Migrator.bootstrap(#{Migrator.last_migration})"
+      end
+
+      def write_seed_extension_tasks
+        return nil if SeedMigration.seed_extension_tasks.blank?
+
+        SeedMigration.seed_extension_tasks.each do |task|
+          write_line("Rake::Task[\"#{task}\"].invoke")
+        end
       end
 
       def write_line(content)

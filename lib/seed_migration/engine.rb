@@ -11,6 +11,9 @@ module SeedMigration
   mattr_accessor :migrations_path
   mattr_accessor :use_strict_create
   mattr_reader :connects_to_database
+  mattr_reader :seed_extension_tasks
+
+  @@seed_extension_tasks = Set.new
 
   self.migration_table_name = DEFAULT_TABLE_NAME
   self.extend_native_migration_task = false
