@@ -155,14 +155,12 @@ module SeedMigration
 
     def self.establish_connection
       if SeedMigration.connects_to_database.present?
-        puts 'requires_connected_to'
         ActiveRecord::Base.connected_to(
           database: SeedMigration.connects_to_database
         ) do
           yield
         end
       else
-        puts 'NOT USING CONNECTION'
         yield
       end
     end
